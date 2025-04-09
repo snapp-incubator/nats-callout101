@@ -27,6 +27,7 @@ func handler(msg *nats.Msg) {
 	}
 
 	userId := rc.ConnectOptions.Username
+	log.Printf("username: %s password: %s wants to connect", rc.ConnectOptions.Username, rc.ConnectOptions.Password)
 
 	claims := jwt.NewUserClaims(rc.UserNkey)
 	claims.Audience = "APP"
