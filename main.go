@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 )
 
 const (
@@ -27,7 +29,7 @@ func handler(msg *nats.Msg) {
 	userId := rc.ConnectOptions.Username
 
 	claims := jwt.NewUserClaims(rc.UserNkey)
-	claims.Audience = "CHAT"
+	claims.Audience = "APP"
 	claims.Name = userId
 	claims.Permissions = jwt.Permissions{
 		Pub: jwt.Permission{
@@ -46,6 +48,36 @@ func handler(msg *nats.Msg) {
 				"$JS.API.CONSUMER.CREATE.KV_chat_workspace.*.>", // Creating consumers/watchers on workspace KV
 			},
 		},
+	}
+
+	vr := jwt.CreateValidationResults()
+
+	claims.Validate(vr)
+	if len(vr.Errors()) > 0 {
+		log.Printf("failed to validate claims %s", errors.Join(vr.Errors()...))
+	}
+
+	kp, err := nkeys.FromSeed([]byte(nkeySeed))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	token, err := claims.Encode(kp)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	{
+		response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
+		response.Audience = rc.Server.ID
+		response.Jwt = token
+
+		token, err := response.Encode(kp)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		msg.Respond([]byte(token))
 	}
 
 	log.Println(rc)
