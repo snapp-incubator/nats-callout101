@@ -1,17 +1,13 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/nats-io/jwt/v2"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nkeys"
+	"github.com/1995parham-learning/nats-callout101/internal/authenticator"
 )
 
 const (
@@ -20,8 +16,30 @@ const (
 )
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	auth, err := authenticator.New(logger, authenticator.Config{
+		URL:      natsURL,
+		Account:  "APP",
+		NkeySeed: nkeySeed,
+	})
+	if err != nil {
+		log.Fatalf("failed to create authenticator service %s", err)
+	}
+
+	if err := auth.Start(); err != nil {
+		log.Fatalf("authenticator service subscription failed %s", err)
+	}
+
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChan
+
 	log.Println("Received shutdown signal, exiting...")
+
+	if err := auth.Stop(); err != nil {
+		log.Fatalf("authenticator service unsubscription failed %s", err)
+	}
+
+	log.Println("Bye bye!")
 }
