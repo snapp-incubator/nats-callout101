@@ -1,36 +1,56 @@
-package main
+package authenticator
 
 import (
 	"errors"
 	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
+	"log/slog"
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 )
 
-const (
-	natsURL  = "nats://auth:auth@127.0.0.1:4222"
-	nkeySeed = "SAANDLKMXL6CUS3CP52WIXBEDN6YJ545GDKC65U5JZPPV6WH6ESWUA6YAI"
-)
+type Authenticator struct {
+	logger *slog.Logger
+	conn   *nats.Conn
+	account string
+	keypair nkeys.KeyPair
+}
 
-func handler(msg *nats.Msg) {
-	log.Printf("Received authentication request on subject: %s, reply: %s", msg.Subject, msg.Reply)
+func Provide(logger *slog.Logger, cfg Config) (*Authenticator, error) {
+	nc, err := nats.Connect(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("fialed to create nats connection %w", err)
+	}
+
+	kp, err := nkeys.FromSeed([]byte(cfg.NkeySeed))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key pair from seed %w", err)
+	}
+
+	return &Authenticator{
+		logger: logger,
+		conn:   nc,
+		account: cfg.Account,
+		keypair: kp,
+	}, nil
+}
+
+func (auth *Authenticator) handler(msg *nats.Msg) {
+	auth.logger.Info("received authentication request", slog.String("subject", msg.Subject), slog.String("reply", msg.Reply))
 
 	rc, err := jwt.DecodeAuthorizationRequestClaims(string(msg.Data))
 	if err != nil {
-		log.Println("Error", err)
+		auth.logger.Error("decoding authentication request failed", slog.String("error", err.Error()))
+
+		msg.Respond([]byte("failed"))
 	}
 
 	userId := rc.ConnectOptions.Username
-	log.Printf("username: %s password: %s wants to connect", rc.ConnectOptions.Username, rc.ConnectOptions.Password)
+	auth.logger.Info("new client wants to connect", slog.String("username", rc.ConnectOptions.Username), slog.String("password", rc.ConnectOptions.Password))
 
 	claims := jwt.NewUserClaims(rc.UserNkey)
-	claims.Audience = "APP"
+	claims.Audience = auth.account
 	claims.Name = userId
 	claims.Permissions = jwt.Permissions{
 		Pub: jwt.Permission{
@@ -55,12 +75,9 @@ func handler(msg *nats.Msg) {
 
 	claims.Validate(vr)
 	if len(vr.Errors()) > 0 {
-		log.Printf("failed to validate claims %s", errors.Join(vr.Errors()...))
-	}
+		auth.logger.Error("failed to validate claims", slog.String("error", errors.Join(vr.Errors()...).Error()))
 
-	kp, err := nkeys.FromSeed([]byte(nkeySeed))
-	if err != nil {
-		log.Fatal(err)
+		msg.Respond([]byte("failed"))
 	}
 
 	token, err := claims.Encode(kp)
@@ -82,20 +99,4 @@ func handler(msg *nats.Msg) {
 	}
 
 	log.Println(rc)
-}
-
-func main() {
-	nc, err := nats.Connect(natsURL)
-	if err != nil {
-		log.Fatalf("Error connecting to NATS: %v", err)
-	}
-
-	if _, err := nc.Subscribe("$SYS.REQ.USER.AUTH", handler); err != nil {
-		log.Fatalf("Error subscribing to authentication subjec: %v", err)
-	}
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	<-signalChan
-	log.Println("Received shutdown signal, exiting...")
 }
