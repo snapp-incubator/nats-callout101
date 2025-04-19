@@ -80,23 +80,23 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 		msg.Respond([]byte("failed"))
 	}
 
-	token, err := claims.Encode(kp)
+	token, err := claims.Encode(auth.keypair)
 	if err != nil {
-		log.Fatal(err)
+		auth.logger.Error("failed to encode claims", slog.String("error", err.Error()))
+
+		msg.Respond([]byte("failed"))
 	}
 
-	{
-		response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
-		response.Audience = rc.Server.ID
-		response.Jwt = token
+	response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
+	response.Audience = rc.Server.ID
+	response.Jwt = token
 
-		token, err := response.Encode(kp)
-		if err != nil {
-			log.Fatal(err)
-		}
+	encResponse, err := response.Encode(auth.keypair)
+	if err != nil {
+		auth.logger.Error("failed to encode response", slog.String("error", err.Error()))
 
-		msg.Respond([]byte(token))
+		msg.Respond([]byte("failed"))
 	}
 
-	log.Println(rc)
+	msg.Respond([]byte(encResponse))
 }
