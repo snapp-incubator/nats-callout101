@@ -35,6 +35,7 @@ func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
 		conn:    nc,
 		users:   cfg.Users,
 		keypair: kp,
+		sub:     nil,
 	}, nil
 }
 
@@ -61,16 +62,22 @@ func (auth *Authenticator) Stop() error {
 	return nil
 }
 
+// nolint: funlen
 func (auth *Authenticator) handler(msg *nats.Msg) {
 	begin := time.Now()
 
-	auth.logger.Info("received authentication request", slog.String("subject", msg.Subject), slog.String("reply", msg.Reply))
+	auth.logger.Info(
+		"received authentication request",
+		slog.String("subject", msg.Subject),
+		slog.String("reply", msg.Reply),
+	)
 
 	rc, err := jwt.DecodeAuthorizationRequestClaims(string(msg.Data))
 	if err != nil {
 		auth.logger.Error("decoding authentication request failed", slog.String("error", err.Error()))
 
 		_ = msg.Respond([]byte("failed"))
+
 		return
 	}
 
@@ -83,6 +90,7 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 			auth.logger.Error("failed to encode response", slog.String("error", err.Error()))
 
 			_ = msg.Respond([]byte("failed"))
+
 			return
 		}
 
@@ -120,6 +128,7 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	vr := jwt.CreateValidationResults()
 
 	claims.Validate(vr)
+
 	if len(vr.Errors()) > 0 {
 		auth.logger.Error("failed to validate claims", slog.String("error", errors.Join(vr.Errors()...).Error()))
 
