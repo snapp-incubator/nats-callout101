@@ -8,8 +8,10 @@ over the NATS protocol itself.
 ## What is NATS Callout Authentication?
 
 Traditionally, NATS authentication often relies on configuring users and permissions directly within the NATS server's configuration file. The Callout authentication method provides a more dynamic and flexible alternative.
+This mechanism actually relies on NATS core protocol, which means you need to have at least one account that uses traditional authentication mechanism and the authenticator service connects through it.
+All other accounts will be redirected to authenticator using NATS request and response.
 
-Here's how it works:
+Here's how it works step by step:
 
 1.  When a client attempts to connect to the NATS server, the server can be configured to send an authentication request message to a specific NATS subject.
 2.  A dedicated service (like the one demonstrated in this repository) subscribes to this subject and receives the authentication request.
