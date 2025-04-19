@@ -15,9 +15,10 @@ type Authenticator struct {
 	conn   *nats.Conn
 	account string
 	keypair nkeys.KeyPair
+	sub *nats.Subscription
 }
 
-func Provide(logger *slog.Logger, cfg Config) (*Authenticator, error) {
+func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
 	nc, err := nats.Connect(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("fialed to create nats connection %w", err)
@@ -34,6 +35,29 @@ func Provide(logger *slog.Logger, cfg Config) (*Authenticator, error) {
 		account: cfg.Account,
 		keypair: kp,
 	}, nil
+}
+
+func (auth *Authenticator) Start() error {
+	if auth.sub != nil {
+		return nil
+	}
+
+	sub, err := auth.conn.Subscribe("$SYS.REQ.USER.AUTH", auth.handler)
+	if err != nil {
+		return fmt.Errorf("error subscribing to authentication subjec %w", err)
+	}
+
+	auth.sub = sub
+
+	return nil
+}
+
+func (auth *Authenticator) Stop() error {
+	if err := auth.sub.Drain(); err != nil {
+		return fmt.Errorf("draining connection failed %w", err)
+	}
+
+	return nil
 }
 
 func (auth *Authenticator) handler(msg *nats.Msg) {

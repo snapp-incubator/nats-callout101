@@ -20,10 +20,6 @@ const (
 )
 
 func main() {
-	if _, err := nc.Subscribe("$SYS.REQ.USER.AUTH", handler); err != nil {
-		log.Fatalf("Error subscribing to authentication subjec: %v", err)
-	}
-
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChan
