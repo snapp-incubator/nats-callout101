@@ -14,7 +14,7 @@ import (
 type Authenticator struct {
 	logger  *slog.Logger
 	conn    *nats.Conn
-	account string
+	users   map[string]User
 	keypair nkeys.KeyPair
 	sub     *nats.Subscription
 }
@@ -33,7 +33,7 @@ func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
 	return &Authenticator{
 		logger:  logger,
 		conn:    nc,
-		account: cfg.Account,
+		users:   cfg.Users,
 		keypair: kp,
 	}, nil
 }
@@ -74,35 +74,48 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 		return
 	}
 
-	userId := rc.ConnectOptions.Username
-	auth.logger.Info("new client wants to connect", slog.String("username", rc.ConnectOptions.Username), slog.String("password", rc.ConnectOptions.Password))
+	response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
+	response.Audience = rc.Server.ID
 
-	if userId == "" {
-		_ = msg.Respond([]byte("failed"))
+	defer func() {
+		encResponse, err := response.Encode(auth.keypair)
+		if err != nil {
+			auth.logger.Error("failed to encode response", slog.String("error", err.Error()))
+
+			_ = msg.Respond([]byte("failed"))
+			return
+		}
+
+		if err := msg.Respond([]byte(encResponse)); err != nil {
+			auth.logger.Error("failed to send back response", slog.String("error", err.Error()))
+		}
+	}()
+
+	auth.logger.Info(
+		"new client wants to connect",
+		slog.String("username", rc.ConnectOptions.Username),
+		slog.String("password", rc.ConnectOptions.Password),
+		slog.String("host", rc.ClientInformation.Host),
+		slog.String("name", rc.ClientInformation.Name),
+		slog.String("kind", rc.ClientInformation.Kind),
+	)
+
+	user, ok := auth.users[rc.ConnectOptions.Username]
+	if !ok || user.Password != rc.ConnectOptions.Password {
+		auth.logger.Error(
+			"invalid username and password",
+			slog.String("username", rc.ConnectOptions.Username),
+			slog.String("password", rc.ConnectOptions.Password),
+		)
+
+		response.Error = "invalid username and password"
+
 		return
 	}
 
 	claims := jwt.NewUserClaims(rc.UserNkey)
-	claims.Audience = auth.account
-	claims.Name = userId
-	claims.Permissions = jwt.Permissions{
-		Pub: jwt.Permission{
-			Allow: jwt.StringList{
-				"$JS.API.INFO", // General JS Info
-
-				// Chat permisions
-				fmt.Sprintf("chat.*.%s", userId),            // Publishing chat messages for this user id
-				"$JS.API.STREAM.INFO.chat_messages",         // Getting info on chat_messages stream
-				"$JS.API.CONSUMER.CREATE.chat_messages.>",   // Creating consumers on chat_messages stream
-				"$JS.API.CONSUMER.MSG.NEXT.chat_messages.>", // Creating consumers on chat_messages stream
-
-				// Workspace permissions
-				"$JS.API.DIRECT.GET.KV_chat_workspace.>",        // Gets from workspace KV
-				"$JS.API.STREAM.INFO.KV_chat_workspace",         // Info about workspace KV
-				"$JS.API.CONSUMER.CREATE.KV_chat_workspace.*.>", // Creating consumers/watchers on workspace KV
-			},
-		},
-	}
+	claims.Audience = user.Account
+	claims.Name = rc.ConnectOptions.Username
 
 	vr := jwt.CreateValidationResults()
 
@@ -110,7 +123,8 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	if len(vr.Errors()) > 0 {
 		auth.logger.Error("failed to validate claims", slog.String("error", errors.Join(vr.Errors()...).Error()))
 
-		_ = msg.Respond([]byte("failed"))
+		response.Error = "internal server error"
+
 		return
 	}
 
@@ -118,25 +132,12 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	if err != nil {
 		auth.logger.Error("failed to encode claims", slog.String("error", err.Error()))
 
-		_ = msg.Respond([]byte("failed"))
+		response.Error = "internal server error"
+
 		return
 	}
 
-	response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
-	response.Audience = rc.Server.ID
 	response.Jwt = token
-
-	encResponse, err := response.Encode(auth.keypair)
-	if err != nil {
-		auth.logger.Error("failed to encode response", slog.String("error", err.Error()))
-
-		_ = msg.Respond([]byte("failed"))
-		return
-	}
-
-	if err := msg.Respond([]byte(encResponse)); err != nil {
-		auth.logger.Error("failed to send back an authenticated response", slog.String("error", err.Error()))
-	}
 
 	auth.logger.Info("authentication successed", slog.Float64("took (s)", time.Since(begin).Seconds()))
 }

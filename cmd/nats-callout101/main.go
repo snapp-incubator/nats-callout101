@@ -20,8 +20,13 @@ func main() {
 
 	auth, err := authenticator.New(logger, authenticator.Config{
 		URL:      natsURL,
-		Account:  "APP",
 		NkeySeed: nkeySeed,
+		Users: map[string]authenticator.User{
+			"admin": {
+				Password: "admin",
+				Account:  "APP",
+			},
+		},
 	})
 	if err != nil {
 		log.Fatalf("failed to create authenticator service %s", err)

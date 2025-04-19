@@ -1,7 +1,12 @@
 package authenticator
 
-type Config struct {
-	URL      string `json:"url,omitempty" koanf:"url"`
+type User struct {
+	Password string `json:"password,omitempty" koanf:"password"`
 	Account  string `json:"account,omitempty" koanf:"account"`
-	NkeySeed string `json:"nkey_seed,omitempty" koanf:"nkey_seed"`
+}
+
+type Config struct {
+	URL      string          `json:"url,omitempty" koanf:"url"`
+	NkeySeed string          `json:"nkey_seed,omitempty" koanf:"nkey_seed"`
+	Users    map[string]User `json:"users,omitempty" koanf:"users"`
 }
