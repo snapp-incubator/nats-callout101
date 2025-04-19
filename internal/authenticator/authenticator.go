@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
@@ -11,11 +12,11 @@ import (
 )
 
 type Authenticator struct {
-	logger *slog.Logger
-	conn   *nats.Conn
+	logger  *slog.Logger
+	conn    *nats.Conn
 	account string
 	keypair nkeys.KeyPair
-	sub *nats.Subscription
+	sub     *nats.Subscription
 }
 
 func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
@@ -30,8 +31,8 @@ func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
 	}
 
 	return &Authenticator{
-		logger: logger,
-		conn:   nc,
+		logger:  logger,
+		conn:    nc,
 		account: cfg.Account,
 		keypair: kp,
 	}, nil
@@ -61,17 +62,25 @@ func (auth *Authenticator) Stop() error {
 }
 
 func (auth *Authenticator) handler(msg *nats.Msg) {
+	begin := time.Now()
+
 	auth.logger.Info("received authentication request", slog.String("subject", msg.Subject), slog.String("reply", msg.Reply))
 
 	rc, err := jwt.DecodeAuthorizationRequestClaims(string(msg.Data))
 	if err != nil {
 		auth.logger.Error("decoding authentication request failed", slog.String("error", err.Error()))
 
-		msg.Respond([]byte("failed"))
+		_ = msg.Respond([]byte("failed"))
+		return
 	}
 
 	userId := rc.ConnectOptions.Username
 	auth.logger.Info("new client wants to connect", slog.String("username", rc.ConnectOptions.Username), slog.String("password", rc.ConnectOptions.Password))
+
+	if userId == "" {
+		_ = msg.Respond([]byte("failed"))
+		return
+	}
 
 	claims := jwt.NewUserClaims(rc.UserNkey)
 	claims.Audience = auth.account
@@ -101,14 +110,16 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	if len(vr.Errors()) > 0 {
 		auth.logger.Error("failed to validate claims", slog.String("error", errors.Join(vr.Errors()...).Error()))
 
-		msg.Respond([]byte("failed"))
+		_ = msg.Respond([]byte("failed"))
+		return
 	}
 
 	token, err := claims.Encode(auth.keypair)
 	if err != nil {
 		auth.logger.Error("failed to encode claims", slog.String("error", err.Error()))
 
-		msg.Respond([]byte("failed"))
+		_ = msg.Respond([]byte("failed"))
+		return
 	}
 
 	response := jwt.NewAuthorizationResponseClaims(rc.UserNkey)
@@ -119,8 +130,13 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	if err != nil {
 		auth.logger.Error("failed to encode response", slog.String("error", err.Error()))
 
-		msg.Respond([]byte("failed"))
+		_ = msg.Respond([]byte("failed"))
+		return
 	}
 
-	msg.Respond([]byte(encResponse))
+	if err := msg.Respond([]byte(encResponse)); err != nil {
+		auth.logger.Error("failed to send back an authenticated response", slog.String("error", err.Error()))
+	}
+
+	auth.logger.Info("authentication successed", slog.Float64("took (s)", time.Since(begin).Seconds()))
 }
