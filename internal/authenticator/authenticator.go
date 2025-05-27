@@ -20,10 +20,12 @@ type Authenticator struct {
 }
 
 func New(logger *slog.Logger, cfg Config) (*Authenticator, error) {
-	nc, err := nats.Connect(cfg.URL)
+	nc, err := nats.Connect(cfg.URL, nats.RetryOnFailedConnect(true))
 	if err != nil {
 		return nil, fmt.Errorf("fialed to create nats connection %w", err)
 	}
+
+	logger.Info("connected successfully to nats")
 
 	kp, err := nkeys.FromSeed([]byte(cfg.NkeySeed))
 	if err != nil {
@@ -73,6 +75,7 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	)
 
 	rc, err := jwt.DecodeAuthorizationRequestClaims(string(msg.Data))
+
 	if err != nil {
 		auth.logger.Error("decoding authentication request failed", slog.String("error", err.Error()))
 
@@ -124,6 +127,42 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	claims := jwt.NewUserClaims(rc.UserNkey)
 	claims.Audience = user.Account
 	claims.Name = rc.ConnectOptions.Username
+
+	// Apply permissions based on privilege level
+	if user.Privileged {
+		// Privileged users get full access
+		claims.Permissions = jwt.Permissions{
+			Pub: jwt.Permission{
+				Allow: []string{">"}, // Allow publishing to all subjects
+				Deny:  []string{},
+			},
+			Sub: jwt.Permission{
+				Allow: []string{">"}, // Allow subscribing to all subjects
+				Deny:  []string{},
+			},
+			Resp: &jwt.ResponsePermission{
+				MaxMsgs: 0,
+				Expires: 0,
+			},
+		}
+	} else {
+		claims.Permissions = jwt.Permissions{
+			Pub: jwt.Permission{
+				Allow: []string{">"}, // Allow publishing to all subjects
+				Deny: []string{"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>", "$JS.API.STREAM.PURGE.>",
+					"$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>"}, // Deny JetStream API access
+			},
+			Sub: jwt.Permission{
+				Allow: []string{">"}, // Allow subscribing to all subjects
+				Deny: []string{"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>",
+					"$JS.API.STREAM.PURGE.>", "$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>"},
+			},
+			Resp: &jwt.ResponsePermission{
+				MaxMsgs: 0,
+				Expires: 0,
+			},
+		}
+	}
 
 	vr := jwt.CreateValidationResults()
 

@@ -1,8 +1,9 @@
 package authenticator
 
 type User struct {
-	Password string `json:"password,omitempty" koanf:"password"`
-	Account  string `json:"account,omitempty"  koanf:"account"`
+	Password   string `json:"password,omitempty"   koanf:"password"`
+	Account    string `json:"account,omitempty"    koanf:"account"`
+	Privileged bool   `json:"privileged,omitempty" koanf:"privileged"`
 }
 
 type Config struct {

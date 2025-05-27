@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	natsURL  = "nats://auth:auth@127.0.0.1:4222"
+	natsURL  = "nats://<user>:<password>@localhost:4222"
 	nkeySeed = "SAANDLKMXL6CUS3CP52WIXBEDN6YJ545GDKC65U5JZPPV6WH6ESWUA6YAI"
 )
 
@@ -23,8 +23,19 @@ func main() {
 		NkeySeed: nkeySeed,
 		Users: map[string]authenticator.User{
 			"admin": {
-				Password: "admin",
-				Account:  "APP",
+				Password:   "admin",
+				Account:    "APP",
+				Privileged: true,
+			},
+			"test-1": {
+				Password:   "test-1",
+				Account:    "$G",
+				Privileged: true,
+			},
+			"test-2": {
+				Password:   "test-2",
+				Account:    "$G",
+				Privileged: false,
 			},
 		},
 	})
