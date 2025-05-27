@@ -4,7 +4,7 @@ default:
 # build
 build:
     @echo '{{ BOLD + CYAN }}Building Binary!{{ NORMAL }}'
-    go build -o koochooloo ./cmd/nats-callout101
+    go build -o nats-callout101 ./cmd/nats-callout101
 
 # update go packages
 update:
