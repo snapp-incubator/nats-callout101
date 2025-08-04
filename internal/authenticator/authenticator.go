@@ -57,7 +57,8 @@ func (auth *Authenticator) Start() error {
 }
 
 func (auth *Authenticator) Stop() error {
-	if err := auth.sub.Drain(); err != nil {
+	err := auth.sub.Drain()
+	if err != nil {
 		return fmt.Errorf("draining connection failed %w", err)
 	}
 
@@ -75,7 +76,6 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 	)
 
 	rc, err := jwt.DecodeAuthorizationRequestClaims(string(msg.Data))
-
 	if err != nil {
 		auth.logger.Error("decoding authentication request failed", slog.String("error", err.Error()))
 
@@ -97,7 +97,8 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 			return
 		}
 
-		if err := msg.Respond([]byte(encResponse)); err != nil {
+		err = msg.Respond([]byte(encResponse))
+		if err != nil {
 			auth.logger.Error("failed to send back response", slog.String("error", err.Error()))
 		}
 	}()
@@ -149,13 +150,17 @@ func (auth *Authenticator) handler(msg *nats.Msg) {
 		claims.Permissions = jwt.Permissions{
 			Pub: jwt.Permission{
 				Allow: []string{">"}, // Allow publishing to all subjects
-				Deny: []string{"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>", "$JS.API.STREAM.PURGE.>",
-					"$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>"}, // Deny JetStream API access
+				Deny: []string{
+					"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>", "$JS.API.STREAM.PURGE.>",
+					"$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>",
+				}, // Deny JetStream API access
 			},
 			Sub: jwt.Permission{
 				Allow: []string{">"}, // Allow subscribing to all subjects
-				Deny: []string{"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>",
-					"$JS.API.STREAM.PURGE.>", "$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>"},
+				Deny: []string{
+					"$JS.API.STREAM.CREATE.>", "$JS.API.STREAM.DELETE.>",
+					"$JS.API.STREAM.PURGE.>", "$JS.API.STREAM.PEER.REMOVE.>", "$JS.API.STREAM.LEADER.STEPDOWN.>",
+				},
 			},
 			Resp: &jwt.ResponsePermission{
 				MaxMsgs: 0,

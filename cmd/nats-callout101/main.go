@@ -43,7 +43,8 @@ func main() {
 		log.Fatalf("failed to create authenticator service %s", err)
 	}
 
-	if err := auth.Start(); err != nil {
+	err = auth.Start()
+	if err != nil {
 		log.Fatalf("authenticator service subscription failed %s", err)
 	}
 
@@ -53,7 +54,8 @@ func main() {
 
 	log.Println("Received shutdown signal, exiting...")
 
-	if err := auth.Stop(); err != nil {
+	err = auth.Stop()
+	if err != nil {
 		log.Fatalf("authenticator service unsubscription failed %s", err)
 	}
 
