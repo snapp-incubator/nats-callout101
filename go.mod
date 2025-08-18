@@ -1,6 +1,6 @@
 module github.com/snapp-incubator/nats-callout101
 
-go 1.24.2
+go 1.25
 
 require (
 	github.com/nats-io/jwt/v2 v2.8.0
